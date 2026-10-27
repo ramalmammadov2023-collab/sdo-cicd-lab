@@ -1,0 +1,52 @@
+# Runs the calculation every minute
+
+# Which Kubernetes API group and version defines a CronJob
+apiVersion: batch/v1
+# The type of object: a CronJob runs a task on a schedule then stop
+kind: CronJob
+metadata:
+  # The name you use in commands, e.g. kubectl get cronjob expo-cron
+  name: expo-cron
+  # Same label as the other files, so kubectl get all -l app=expo finds it
+  labels:
+    app: expo
+spec:
+  # When to run, in cron format: minute hour day-of-month month day-of-week
+  # Five stars means "every minute of every hour of every day"
+  # (for every 5 minutes, use "*/5 * * * *")
+  # ┌───────── minute        (0-59)
+  # │ ┌─────── hour          (0-23)
+  # │ │ ┌───── day of month  (1-31)
+  # │ │ │ ┌─── month         (1-12)
+  # │ │ │ │ ┌─ day of week   (0-6, Sunday = 0)
+  # │ │ │ │ │
+  # * * * * *
+  # 0 9 * * * --> everyday at 9am
+  # 0 0 * * 0 --> every Sunday at midnight
+  # */10 * * * * --> every 10 minute of every hour of every day
+  schedule: "*/10 * * * *"
+  # Keep the last 3 successful Jobs so you can still read their logs
+  successfulJobsHistoryLimit: 3
+  # Keep the last 1 failed Job for debugging
+  # Older ones are deleted automatically so they don't pile up
+  failedJobsHistoryLimit: 1
+  # The blueprint for each Job the CronJob creates
+  jobTemplate:
+    spec:
+      # No retries after a failure
+      backoffLimit: 0
+      # The blueprint for the Pod each Job creates
+      template:
+        spec:
+          # Never restart the container. When it exits, the Pod is done
+          restartPolicy: Never
+          containers:
+          # The container's name inside the Pod
+          - name: expo-application
+            # The image to run (the one loaded with: minikube image load expo:1.0)
+            image: expo:1.0
+            # Use the local image if it exists, only pull from a registry if it doesn't
+            imagePullPolicy: IfNotPresent
+            # Arguments passed to /expo: base 3, exponent 4
+            # Expected output: 3 ^ 4 = 81
+            args: ["3", "4"]

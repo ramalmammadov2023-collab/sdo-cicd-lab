@@ -1,0 +1,33 @@
+# This Job is SUPPOSED to fail: "abc" is not a number.
+
+# Which Kubernetes API group and version defines a Job
+apiVersion: batch/v1
+# The type of object: a Job runs a task once, then stops
+kind: Job
+metadata:
+  # The name you use in commands, e.g. kubectl logs job/expo-bad-job
+  name: expo-bad-job
+  # Same label as the good Job, so kubectl get jobs -l app=expo shows both
+  labels:
+    app: expo
+spec:
+  # No retries after a failure. This matters here: with 0, the Job
+  # is marked "Failed" right away instead of trying again and again
+  backoffLimit: 0
+  # The blueprint for the Pod this Job creates
+  template:
+    spec:
+      # Never restart the container. When it exits with an error, the Pod
+      # stays in "Error" state and you can still read its logs
+      restartPolicy: Never
+      containers:
+      # The container's name inside the Pod
+      - name: expo-application
+        # The image to run (the one loaded with: minikube image load expo:1.0)
+        image: expo:1.0
+        # Use the local image if it exists, only pull from a registry if it doesn't
+        imagePullPolicy: IfNotPresent
+        # Arguments passed to /expo: "abc" is not a valid base number,
+        # so the program prints an error and exits with a non-zero code.
+        # Kubernetes sees that code and marks the Job as Failed
+        args: ["abc", "2"]

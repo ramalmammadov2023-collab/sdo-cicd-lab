@@ -1,0 +1,169 @@
+# The name shown in the Actions tab
+name: CI
+
+# When the pipeline runs
+on:
+  # Run on every push to main or to the broken branch
+  push:
+    branches: [main, broken]
+  # Also run on every pull request (any target branch)
+  pull_request:
+
+jobs:
+  # Job 1: check the Dockerfile for bad practices
+  lint:
+    # Each job gets a fresh Ubuntu virtual machine from GitHub
+    runs-on: ubuntu-latest
+    steps:
+      # Download your repository code onto the VM
+      - uses: actions/checkout@v4
+      # Hadolint is a linter for Dockerfiles. 
+      # A linter is a tool that reads your code (or config files) and points out mistakes, 
+      # risky patterns, and style problems without running it. It is a spell-checker for code.
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          # Which file to check
+          dockerfile: Dockerfile
+          # Keep it beginner friendly: only fail on real errors
+          # (warnings and style hints are shown but don't stop the pipeline)
+          failure-threshold: error
+
+  # Job 2: build the image and run all tests
+  build-and-test:
+    # Wait for lint to pass first. If lint fails, this job is skipped
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sets up Docker Buildx, the modern Docker build engine
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        # Builds the image from your Dockerfile
+        uses: docker/build-push-action@v6
+        with:
+          # Build from the repository root (where the Dockerfile is)
+          context: .
+          # Keep the image on this VM so the next step can run it
+          # (without this, Buildx would build it and then discard it)
+          load: true
+          # Name and tag the image, same as: docker build -t expo:1.0 .
+          tags: expo:1.0
+
+      - name: Run test script
+        # The | lets you write several commands on separate lines
+        run: |
+          # Make sure test.sh is allowed to run
+          chmod +x test.sh
+          # Run the tests, show output on screen AND save it to a file
+          # (tee does both). Note: the pipeline fails if test.sh exits with an error
+          ./test.sh expo:1.0 | tee test-results.txt
+
+      - name: Save image for the next job
+        # Export the image to a .tar file. Jobs run on separate VMs,
+        # so the next job can't see this image unless we pass it as a file
+        run: docker save expo:1.0 -o expo-image.tar
+
+      - name: Upload test results and image
+        # Stores files on GitHub so you can download them or reuse them
+        uses: actions/upload-artifact@v4
+        with:
+          # The artifact name you see in the Actions tab
+          name: build-output
+          # Files to include in the artifact
+          path: |
+            test-results.txt
+            expo-image.tar
+
+  # Job 3: test Kubernetes (good Job, failing Job, CronJob)
+  kubernetes-test:
+    # Needs the image file made by the previous job
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Download the artifact uploaded in Job 2 (test-results.txt and expo-image.tar)
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-output
+
+      - name: Start minikube
+        # Installs and starts a Minikube cluster on the VM
+        uses: medyagh/setup-minikube@latest
+
+      - name: Load image into minikube
+        run: |
+          # Put the image back into this VM's Docker from the .tar file
+          docker load -i expo-image.tar
+          # Copy it into Minikube so Kubernetes can use it
+          minikube image load expo:1.0
+
+      - name: Run the good Job (must succeed)
+        run: |
+          # Create the Job
+          kubectl apply -f Job.yaml
+          # Wait up to 60 seconds for it to finish successfully.
+          # If it doesn't, this step fails and so does the pipeline
+          kubectl wait --for=condition=complete job/expo-job --timeout=60s
+          # Print the program's output into the pipeline log
+          kubectl logs job/expo-job
+
+      - name: Run the bad Job (must fail)
+        run: |
+          kubectl apply -f Job-bad.yaml
+          # Here the test passes when the Job FAILS: wait for the "failed" condition.
+          # If it somehow succeeds, the wait times out and this step fails
+          kubectl wait --for=condition=failed job/expo-bad-job --timeout=60s
+          # Show the error message. "|| true" means: ignore any error from this command
+          kubectl logs job/expo-bad-job || true
+
+      - name: Check the CronJob is created
+        run: |
+          kubectl apply -f CronJob.yaml
+          # Confirms the CronJob exists. It doesn't wait for it to fire
+          kubectl get cronjob expo-cron
+
+  # Job 4: publish only from main
+  publish:
+    # Only runs if both earlier jobs passed
+    needs: [build-and-test, kubernetes-test]
+    # Only run on the main branch. The broken branch never publishes
+    # (and a failed publish can't happen on pull requests either)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Permissions given to the automatic token, kept to the minimum needed
+    permissions:
+      # Read your repository code
+      contents: read
+      # Upload packages to GitHub Packages
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      # Log in to GitHub's container registry (ghcr.io)
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          # The GitHub user who triggered the run
+          username: ${{ github.actor }}
+          # A temporary token GitHub creates for every run (you don't create it)
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Build the image again and push it to the registry
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          # Upload the image instead of keeping it on the VM
+          push: true
+          # Three tags for the same image:
+          #   :1.0       the fixed version
+          #   :latest    always points to the newest build
+          #   :<sha>     the exact commit, so you can trace any image back to its code
+          # tags: |
+          #   ghcr.io/${{ github.repository_owner }}/expo:1.0
+          #   ghcr.io/${{ github.repository_owner }}/expo:latest
+          #   ghcr.io/${{ github.repository_owner }}/expo:${{ github.sha }}
+          tags: |
+            ghcr.io/habits-lab-mmacedo/expo:1.0
+            ghcr.io/habits-lab-mmacedo/expo:latest
+            ghcr.io/habits-lab-mmacedo/expo:${{ github.sha }}

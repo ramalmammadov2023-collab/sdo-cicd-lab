@@ -1,41 +1,55 @@
+# Prerequisites
+*.d
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Windows
-Thumbs.db
-Desktop.ini
-
-# Linux / Editors
-*~
-*.swp
-*.swo
-.vscode/
-.idea/
-
-# C compilation artifacts
-/sdo-expo
-/expo/sdo-expo
-/server
-/website/server
+# Object files
 *.o
+*.ko
 *.obj
-*.out
-*.exe
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
 *.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
 *.so
+*.so.*
 *.dylib
 
-# Debugging and temporary files
-*.log
-*.tmp
-*.temp
-core
-core.*
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
 
-# Local environment files
-.env
-.env.*
-!.env.example
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# debug information files
+*.dwo

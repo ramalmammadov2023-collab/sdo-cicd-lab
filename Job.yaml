@@ -1,0 +1,51 @@
+# This Job is SUPPOSED to pass: correct inputs.
+
+# Which Kubernetes API group and version defines a Job
+apiVersion: batch/v1
+# The type of object: a Job runs a task once, then stops
+kind: Job
+metadata:
+  # The name you use in commands, e.g. kubectl logs job/expo-job
+  name: expo-job
+  # Labels are tags for finding and grouping objects (kubectl get jobs -l app=expo)
+  labels:
+    app: expo
+spec:
+  # How many times to retry after a failure. 0 = no retries,
+  # so a failing Job shows "Failed" right away
+  backoffLimit: 0
+  # The blueprint for the Pod this Job creates
+  template:
+    spec:
+      # Never restart the container. When it exits, the Pod is done.
+      # (Jobs only allow Never or OnFailure, not Always)
+      restartPolicy: Never
+      # Pod-level security rules
+      securityContext:
+        # Refuse to start if the container would run as root
+        runAsNonRoot: true
+        # Run as user ID 65534 ("nobody"), matching USER in the Dockerfile
+        runAsUser: 65534
+      containers:
+      # The container's name inside the Pod
+      - name: expo-application
+        # The image to run (the one loaded with: minikube image load expo:1.0)
+        image: expo:1.0
+        # Use the local image if it exists, only pull from a registry if it doesn't
+        imagePullPolicy: IfNotPresent
+        # Arguments passed to /expo (the ENTRYPOINT): base 2, exponent 10
+        # Expected output: 2 ^ 10 = 1024
+        args: ["2", "10"]
+        # CPU and memory settings
+        resources:
+          # Hard ceiling: the container cannot go above this
+          limits:
+            # Kill if it uses more than 64 MiB of memory
+            memory: "64Mi"
+            # Slow down above 250 millicores (0.25 of a CPU core)
+            cpu: "250m"
+          # Minimum the scheduler reserves when choosing where to run the Pod
+          requests:
+            memory: "16Mi"
+            # 50 millicores = 0.05 of a CPU core
+            cpu: "50m"

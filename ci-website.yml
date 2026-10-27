@@ -1,0 +1,48 @@
+# A second workflow, only for the website (Level 4).
+# ci.yml tests the Docker image and Kubernetes. This one tests the website.
+# It shows up as its own pipeline named "CI Website" in the Actions tab.
+name: CI Website
+
+# When the pipeline runs
+on:
+  # Run on every push to main or to the broken branch
+  push:
+    branches: [main, broken]
+  # Also run on every pull request
+  pull_request:
+
+jobs:
+  # The only job: start server.py and check it with curl
+  website-test:
+    # A fresh Ubuntu virtual machine from GitHub
+    runs-on: ubuntu-latest
+    steps:
+      # Download your repository code onto the VM
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        # server.py runs "docker run expo:1.0", so the image must exist on this VM
+        run: docker build -t expo:1.0 .
+
+      - name: Start the server and run the website tests
+        run: |
+          # Make "| tee" keep the exit code of test-web.sh
+          set -o pipefail
+          # Start the website in the background (the & does that)
+          python3 server.py &
+          # Wait up to 10 seconds until the server answers
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            curl -s http://localhost:8000 > /dev/null && break
+            sleep 1
+          done
+          # Run the website tests and save the output
+          sh test-web.sh | tee test-web-results.txt
+
+      - name: Upload test results
+        # always() uploads the file even when the tests failed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # The artifact name you see in the Actions tab
+          name: website-test-results
+          path: test-web-results.txt
